@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bread sign-in sheet check</title>
+<style>
+  :root { color-scheme: light dark; --accent: #2f6feb; --ok: #1a7f37; --warn: #9a6700; --bad: #cf222e; --muted: #6e7781; --line: #8885; }
+  @media (prefers-color-scheme: dark) { :root { --ok: #3fb950; --warn: #d29922; --bad: #f85149; --muted: #8b949e; } }
+  * { box-sizing: border-box; }
+  body { margin: 0 auto; max-width: 44rem; padding: 1rem 1rem 3rem; font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  h1 { font-size: 1.4rem; margin: .25rem 0 .5rem; }
+  h2 { font-size: 1.1rem; margin: 1.5rem 0 .5rem; }
+  p { margin: .4rem 0; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85em; overflow-wrap: anywhere; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+  th, td { text-align: left; vertical-align: top; padding: .25rem .4rem; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+  th { width: 36%; font-weight: 600; }
+  button { font: inherit; font-weight: 600; padding: .6rem 1rem; border: 0; border-radius: .5rem; background: var(--accent); color: #fff; cursor: pointer; }
+  button.plain { background: transparent; color: inherit; border: 1px solid var(--line); font-weight: 400; padding: .4rem .8rem; }
+  select { font: inherit; }
+  .check { border: 1px solid var(--line); border-radius: .6rem; padding: .75rem; margin: .75rem 0; }
+  .hint { color: var(--muted); font-size: .9rem; }
+  .out, #log { list-style: none; padding: 0; margin: .4rem 0 0; font-size: .85rem; }
+  .out li, #log li { padding: .3rem 0; border-top: 1px solid var(--line); overflow-wrap: anywhere; }
+  .time { color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin-right: .5rem; }
+  .ok { color: var(--ok); }
+  .warn { color: var(--warn); }
+  .bad { color: var(--bad); font-weight: 600; }
+  iframe { display: block; width: 100%; height: 12rem; margin-top: .5rem; border: 1px dashed var(--line); border-radius: .4rem; }
+</style>
+</head>
+<body>
+<h1>Bread sign-in sheet check</h1>
+<p>Open this page in Bread's in-app browser on a phone. Each button calls <code>window.bread.auth.open(url)</code> and shows what came back, with the time, under the button and in the log at the bottom.</p>
+
+<h2>Status</h2>
+<table><tbody id="status"></tbody></table>
+<p class="hint">Expected on a phone: keys <code>version, presentation, auth</code>, frozen, version 1, and the property not writable or configurable. In Bread's desktop app: no keys, frozen, no version, presentation or auth, and the property writable and configurable.</p>
+<p><button class="plain" type="button" id="refresh">Refresh status</button></p>
+
+<h2>Checks</h2>
+
+<div class="check" id="sign-in">
+  <button type="button">Sign in</button>
+  <p class="hint">Opens <code>auth.html</code> on this origin in Bread's sheet. Finish there: <code>{ url }</code> naming this origin, with a test handle. Cancel or close the sheet: <code>{ cancelled: true }</code>.</p>
+  <ol class="out"></ol>
+</div>
+
+<div class="check" id="sign-in-twice">
+  <button type="button">Sign in twice</button>
+  <p class="hint">Calls open twice in a row. Expected: the second call rejects <code>AUTH_BUSY</code> at once, and the first opens the sheet.</p>
+  <ol class="out"></ol>
+</div>
+
+<div class="check" id="frame-same">
+  <button type="button">Sign in from an iframe</button>
+  <p class="hint">A frame on this origin tries to open the sheet. Expected: the frame finds no <code>window.bread.auth</code>, its direct call to Bread's bridge rejects <code>AUTH_NOT_MAIN_FRAME</code>, and no sheet opens.</p>
+  <ol class="out"></ol>
+  <div class="frame-box"></div>
+</div>
+
+<div class="check" id="frame-cross">
+  <button type="button">Sign in from an iframe on another origin</button>
+  <p class="hint">The same, from a frame on <code>raw.githack.com</code>.</p>
+  <ol class="out"></ol>
+  <div class="frame-box"></div>
+</div>
+
+<div class="check" id="slow">
+  <button type="button">Slow page</button>
+  <p class="hint">Opens <code>auth.html?slow=1</code>, which keeps loading for about 25 seconds and counts the seconds. Close the sheet while it is still loading. Expected: <code>{ cancelled: true }</code>.</p>
+  <ol class="out"></ol>
+</div>
+
+<div class="check" id="delayed">
+  <button type="button">Sign in after a delay</button>
+  <label class="hint">of <select id="delay"><option>5</option><option selected>15</option><option>30</option><option>60</option></select> seconds</label>
+  <p class="hint">Calls open when the delay is over, so you can park this dApp first. Parked: <code>AUTH_UNAVAILABLE</code>, and no sheet over the wallet. While another dApp's sheet is open: <code>AUTH_BUSY</code>.</p>
+  <ol class="out"></ol>
+</div>
+
+<div class="check" id="other-origin">
+  <button type="button">Open a URL on another origin</button>
+  <p class="hint">Calls open with <code>https://example.com/</code>. Expected: <code>AUTH_INVALID_URL</code>, and no sheet.</p>
+  <ol class="out"></ol>
+</div>
+
+<h2>Other pages</h2>
+<ul>
+  <li><a href="https://raw.githack.com/WiktorStarczewski/bread-sign-in-check/main/second-origin.html">Second-origin page</a> on <code>raw.githack.com</code>. Its sign-in opens a page on its own origin that redirects into this origin's sign-in page. Expected after Finish: <code>AUTH_ORIGIN_MISMATCH</code>, never <code>{ url }</code>.</li>
+  <li><a href="desktop.html">Desktop page</a>, for Bread's desktop app. It declares its own top-level <code>bread</code> and shows whether it wins over Bread's.</li>
+</ul>
+
+<h2>Log</h2>
+<p><button class="plain" type="button" id="copy">Copy log</button> <button class="plain" type="button" id="clear">Clear log</button> <span class="hint" id="copy-note"></span></p>
+<ol id="log"></ol>
+
+<script>
+(() => {
+  'use strict';
+
+  const loadedAt = new Date();
+  const secondOrigin = 'https://raw.githack.com/WiktorStarczewski/bread-sign-in-check/main/';
+  const logList = document.getElementById('log');
+  const entries = [];
+  const frames = new Map();
+  let sequence = 0;
+
+  const yes = flag => (flag ? 'yes' : 'no');
+  const pageUrl = path => new URL(path, location.href).href;
+
+  function clock(date) {
+    const pad = (value, width) => String(value).padStart(width || 2, '0');
+    return `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${pad(date.getMilliseconds(), 3)}`;
+  }
+
+  function since(start) {
+    return `${((performance.now() - start) / 1000).toFixed(1)} s`;
+  }
+
+  function line(time, text, tone) {
+    const item = document.createElement('li');
+    const stamp = document.createElement('span');
+    stamp.className = 'time';
+    stamp.textContent = time;
+    const body = document.createElement('span');
+    body.textContent = text;
+    if (tone) body.className = tone;
+    item.append(stamp, body);
+    return item;
+  }
+
+  function write(checkId, text, tone) {
+    const time = clock(new Date());
+    entries.push(`${time}  ${text}`);
+    logList.append(line(time, text, tone));
+    if (checkId) document.querySelector(`#${checkId} .out`).append(line(time, text, tone));
+  }
+
+  function describeError(error) {
+    const isObject = error !== null && typeof error === 'object';
+    const message = isObject ? String(error.message) : String(error);
+    let code = 'no AUTH_ code';
+    if (/^AUTH_[A-Z_]+$/.test(message)) code = message;
+    else if (isObject && error.code !== undefined) code = String(error.code);
+    const name = isObject && error.name ? error.name : typeof error;
+    return { code, detail: `${name}, message "${message}"` };
+  }
+
+  function queryFields(url) {
+    const question = url.indexOf('?');
+    const hash = url.indexOf('#');
+    if (question < 0 || (hash >= 0 && hash < question)) return [];
+    return url.slice(question + 1, hash < 0 ? url.length : hash).split('&').map(field => {
+      const equals = field.indexOf('=');
+      const name = equals < 0 ? field : field.slice(0, equals);
+      const raw = equals < 0 ? '' : field.slice(equals + 1);
+      try {
+        return `${name} = ${decodeURIComponent(raw)}`;
+      } catch (error) {
+        return `${name} = ${raw} (not decodable)`;
+      }
+    });
+  }
+
+  function describeValue(value) {
+    let json;
+    try {
+      json = JSON.stringify(value);
+    } catch (error) {
+      json = String(value);
+    }
+    const notes = [];
+    if (value !== null && typeof value === 'object') notes.push(Object.isFrozen(value) ? 'frozen' : 'not frozen');
+    if (value && typeof value.url === 'string') notes.push(...queryFields(value.url));
+    return notes.length ? `${json} (${notes.join('; ')})` : String(json);
+  }
+
+  function authApi() {
+    const bread = window.bread;
+    return bread && bread.auth && typeof bread.auth.open === 'function' ? bread.auth : null;
+  }
+
+  function open(checkId, label, url, expected) {
+    const tag = `#${++sequence} ${label}`;
+    const auth = authApi();
+    if (!auth) {
+      write(checkId, `${tag}: window.bread.auth is missing, so nothing was called. Open this page in Bread's in-app browser on a phone.`, 'bad');
+      return;
+    }
+    write(checkId, `${tag}: open("${url}")`);
+    const start = performance.now();
+    let result;
+    try {
+      result = Promise.resolve(auth.open(url));
+    } catch (error) {
+      result = Promise.reject(error);
+    }
+    result.then(
+      value => {
+        const verdict = expected ? `, but expected ${expected}` : '';
+        write(checkId, `${tag}: resolved after ${since(start)}: ${describeValue(value)}${verdict}`, expected ? 'bad' : 'ok');
+      },
+      error => {
+        const { code, detail } = describeError(error);
+        let verdict = '';
+        let tone = 'warn';
+        if (expected) {
+          verdict = code === expected ? ', as expected' : `, but expected ${expected}`;
+          tone = code === expected ? 'ok' : 'bad';
+        }
+        write(checkId, `${tag}: rejected after ${since(start)} with ${code} (${detail})${verdict}`, tone);
+      },
+    );
+  }
+
+  function frameCheck(checkId, label, src) {
+    const tag = `#${++sequence} ${label}`;
+    for (const [frame, info] of frames) {
+      if (info.checkId === checkId) frames.delete(frame);
+    }
+    const frame = document.createElement('iframe');
+    frame.title = label;
+    frame.src = src;
+    frames.set(frame, { checkId, tag, origin: new URL(src).origin });
+    document.querySelector(`#${checkId} .frame-box`).replaceChildren(frame);
+    write(checkId, `${tag}: loading ${src} in a frame`);
+  }
+
+  window.addEventListener('message', event => {
+    const data = event.data;
+    if (!data || typeof data !== 'object' || data.kind !== 'bread-sign-in-check-frame' || typeof data.text !== 'string') return;
+    for (const [frame, info] of frames) {
+      if (frame.contentWindow === event.source && event.origin === info.origin) {
+        write(info.checkId, `${info.tag}: ${data.text}`, data.tone === 'ok' || data.tone === 'bad' ? data.tone : '');
+        return;
+      }
+    }
+  });
+
+  function delayed() {
+    const delay = Number(document.getElementById('delay').value);
+    const due = Date.now() + delay * 1000;
+    write('delayed', `Sign in after ${delay} s: due at ${clock(new Date(due))}. Park this dApp now, or open another dApp's sheet.`);
+    setTimeout(() => {
+      const late = (Date.now() - due) / 1000;
+      const lateness = late >= 1 ? `, ${late.toFixed(1)} s late` : '';
+      open('delayed', `Sign in after ${delay} s, called with the page ${document.visibilityState}${lateness}`, pageUrl('auth.html'));
+    }, delay * 1000);
+  }
+
+  function descriptorText(target, key) {
+    const descriptor = Object.getOwnPropertyDescriptor(target, key);
+    if (!descriptor) return 'not an own property of window';
+    const flags = ['writable', 'enumerable', 'configurable'].map(flag => `${flag} ${yes(descriptor[flag])}`);
+    return (descriptor.get || descriptor.set ? 'accessor, ' : '') + flags.join(', ');
+  }
+
+  function renderStatus() {
+    const bread = window.bread;
+    const isObject = bread !== null && (typeof bread === 'object' || typeof bread === 'function');
+    const webkit = window.webkit;
+    const iosBridge = webkit && webkit.messageHandlers && webkit.messageHandlers.breadAuth;
+    let presence = 'absent';
+    if (isObject) presence = 'present';
+    else if (bread !== undefined) presence = `present, but a ${typeof bread}: ${String(bread)}`;
+    const rows = [
+      ['Page loaded at', `${clock(loadedAt)}; it stays the same while this page stays loaded`],
+      ['Origin', location.origin],
+      ['Top document', yes(window.top === window)],
+      ['window.bread', presence],
+    ];
+    if (isObject) {
+      const auth = bread.auth;
+      rows.push(
+        ['Keys', Object.getOwnPropertyNames(bread).join(', ') || 'none'],
+        ['Frozen', yes(Object.isFrozen(bread))],
+        ['version', bread.version === undefined ? 'none' : JSON.stringify(bread.version)],
+        ['presentation', 'presentation' in bread ? 'present' : 'absent'],
+        ['auth', auth ? `present: version ${JSON.stringify(auth.version)}, open is a ${typeof auth.open}, frozen ${yes(Object.isFrozen(auth))}` : 'absent'],
+      );
+    }
+    rows.push(
+      ['window.bread property', descriptorText(window, 'bread')],
+      ["Bread's sign-in bridge", iosBridge ? 'iOS, webkit.messageHandlers.breadAuth' : window.breadAuth ? 'Android, window.breadAuth' : 'none'],
+      ['Visibility', document.visibilityState],
+      ['User agent', navigator.userAgent],
+    );
+    document.getElementById('status').replaceChildren(...rows.map(([name, value]) => {
+      const row = document.createElement('tr');
+      const head = document.createElement('th');
+      head.textContent = name;
+      const cell = document.createElement('td');
+      cell.textContent = value;
+      row.append(head, cell);
+      return row;
+    }));
+  }
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (error) {
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.setAttribute('readonly', '');
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.append(area);
+      area.select();
+      area.setSelectionRange(0, text.length);
+      let copied = false;
+      try {
+        copied = document.execCommand('copy');
+      } catch (ignored) {
+        copied = false;
+      }
+      area.remove();
+      return copied;
+    }
+  }
+
+  const checks = {
+    'sign-in': () => open('sign-in', 'Sign in', pageUrl('auth.html')),
+    'sign-in-twice': () => {
+      open('sign-in-twice', 'Sign in twice, first call', pageUrl('auth.html'));
+      open('sign-in-twice', 'Sign in twice, second call', pageUrl('auth.html'), 'AUTH_BUSY');
+    },
+    'frame-same': () => frameCheck('frame-same', 'Sign in from an iframe', pageUrl('frame.html')),
+    'frame-cross': () => frameCheck('frame-cross', 'Sign in from an iframe on another origin', `${secondOrigin}frame.html`),
+    slow: () => open('slow', 'Slow page', pageUrl('auth.html?slow=1')),
+    delayed,
+    'other-origin': () => open('other-origin', 'Open a URL on another origin', 'https://example.com/', 'AUTH_INVALID_URL'),
+  };
+
+  for (const [checkId, run] of Object.entries(checks)) {
+    document.querySelector(`#${checkId} button`).addEventListener('click', () => {
+      document.querySelector(`#${checkId} .out`).replaceChildren();
+      run();
+    });
+  }
+
+  document.getElementById('refresh').addEventListener('click', renderStatus);
+  document.getElementById('copy').addEventListener('click', async () => {
+    const copied = await copyText(entries.join('\n'));
+    document.getElementById('copy-note').textContent = copied ? `Copied ${entries.length} lines.` : 'Copying failed; select the log by hand.';
+  });
+  document.getElementById('clear').addEventListener('click', () => {
+    entries.length = 0;
+    logList.replaceChildren();
+    for (const out of document.querySelectorAll('.out')) out.replaceChildren();
+    document.getElementById('copy-note').textContent = '';
+  });
+  document.addEventListener('visibilitychange', () => write(null, `This page is now ${document.visibilityState}.`));
+
+  renderStatus();
+  write(null, `Page loaded: ${location.href}`);
+})();
+</script>
+</body>
+</html>

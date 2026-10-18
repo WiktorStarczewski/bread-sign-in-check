@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bread sign-in sheet check: desktop page</title>
+<script>
+var breadBeforeThePage = window.bread;
+var bread = { own: true };
+</script>
+<style>
+  :root { color-scheme: light dark; --ok: #1a7f37; --bad: #cf222e; --muted: #6e7781; --line: #8885; }
+  @media (prefers-color-scheme: dark) { :root { --ok: #3fb950; --bad: #f85149; --muted: #8b949e; } }
+  * { box-sizing: border-box; }
+  body { margin: 0 auto; max-width: 44rem; padding: 1rem 1rem 3rem; font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  h1 { font-size: 1.4rem; margin: .25rem 0 .5rem; }
+  p { margin: .4rem 0; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85em; overflow-wrap: anywhere; }
+  table { border-collapse: collapse; width: 100%; font-size: .9rem; margin: .75rem 0; }
+  th, td { text-align: left; vertical-align: top; padding: .25rem .4rem; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+  th { width: 45%; font-weight: 600; }
+  .ok { color: var(--ok); font-weight: 600; }
+  .bad { color: var(--bad); font-weight: 600; }
+  .hint { color: var(--muted); font-size: .9rem; }
+</style>
+</head>
+<body>
+<h1>Desktop: the page's own bread</h1>
+<p>Open this page in Bread's desktop app. Bread's desktop window defines an empty, frozen <code>window.bread</code>. This page declares its own top-level <code>var bread = { own: true };</code>, and the page's declaration must win.</p>
+<table><tbody id="status"></tbody></table>
+<p id="verdict"></p>
+<p class="hint">In another browser there is no marker to replace, so the page's own value is simply there.</p>
+<p><a href="./">Main test page</a></p>
+
+<script>
+(() => {
+  'use strict';
+
+  const before = breadBeforeThePage;
+  const yes = flag => (flag ? 'yes' : 'no');
+
+  function describe(value) {
+    if (value === undefined) return 'absent';
+    if (value === null || (typeof value !== 'object' && typeof value !== 'function')) return `a ${typeof value}: ${String(value)}`;
+    return `an object, keys ${Object.getOwnPropertyNames(value).join(', ') || 'none'}, frozen ${yes(Object.isFrozen(value))}`;
+  }
+
+  function descriptorText() {
+    const descriptor = Object.getOwnPropertyDescriptor(window, 'bread');
+    if (!descriptor) return 'not an own property of window';
+    const flags = ['writable', 'enumerable', 'configurable'].map(flag => `${flag} ${yes(descriptor[flag])}`);
+    return (descriptor.get || descriptor.set ? 'accessor, ' : '') + flags.join(', ');
+  }
+
+  function snapshot() {
+    let json;
+    try {
+      json = JSON.stringify(window.bread);
+    } catch (error) {
+      json = String(window.bread);
+    }
+    return { own: Boolean(window.bread) && window.bread.own === true, json: String(json), descriptor: descriptorText() };
+  }
+
+  const marker = before !== null && typeof before === 'object' && Object.isFrozen(before) && Object.getOwnPropertyNames(before).length === 0;
+
+  function render(atScript, afterLoad) {
+    const rows = [
+      ["window.bread before this page's declaration ran", describe(before)],
+      ['window.bread.own === true when this page ran', yes(atScript.own)],
+      ['window.bread.own === true one second after load', afterLoad ? yes(afterLoad.own) : 'checking'],
+      ['window.bread now', (afterLoad || atScript).json],
+      ['window.bread property', (afterLoad || atScript).descriptor],
+    ];
+    document.getElementById('status').replaceChildren(...rows.map(([name, value]) => {
+      const row = document.createElement('tr');
+      const head = document.createElement('th');
+      head.textContent = name;
+      const cell = document.createElement('td');
+      cell.textContent = value;
+      row.append(head, cell);
+      return row;
+    }));
+
+    const verdict = document.getElementById('verdict');
+    const own = atScript.own && (!afterLoad || afterLoad.own);
+    if (!own) {
+      verdict.className = 'bad';
+      verdict.textContent = "Fail: window.bread.own isn't true, so Bread's marker won over the page's own bread.";
+    } else if (!marker) {
+      verdict.className = '';
+      verdict.textContent = `The page's own bread is in place, but there was no empty, frozen marker before it (${describe(before)}), so this isn't Bread's desktop dApp window.`;
+    } else {
+      verdict.className = 'ok';
+      verdict.textContent = afterLoad
+        ? "Pass: the page's own bread replaced Bread's empty, frozen marker, and still holds one second after load."
+        : "So far so good: the page's own bread replaced Bread's marker. Checking again after load.";
+    }
+  }
+
+  const atScript = snapshot();
+  render(atScript, null);
+  window.addEventListener('load', () => setTimeout(() => render(atScript, snapshot()), 1000));
+})();
+</script>
+</body>
+</html>

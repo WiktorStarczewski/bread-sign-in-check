@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bread sign-in sheet check: sign-in page</title>
+<style>
+  :root { color-scheme: light dark; --accent: #2f6feb; --muted: #6e7781; --line: #8885; --note: #f6c34433; }
+  @media (prefers-color-scheme: dark) { :root { --muted: #8b949e; } }
+  * { box-sizing: border-box; }
+  body { margin: 0 auto; max-width: 40rem; padding: 1rem 1rem 3rem; font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  h1 { font-size: 1.3rem; margin: .25rem 0 .5rem; }
+  p { margin: .4rem 0; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85em; overflow-wrap: anywhere; }
+  button { font: inherit; font-weight: 600; padding: .6rem 1rem; border: 0; border-radius: .5rem; background: var(--accent); color: #fff; cursor: pointer; }
+  .end { border: 1px solid var(--line); border-radius: .6rem; padding: .75rem; margin: .75rem 0; }
+  .hint { color: var(--muted); font-size: .9rem; }
+  .url { display: block; color: var(--muted); font-size: .75rem; margin-top: .3rem; }
+  .note { background: var(--note); border-radius: .6rem; padding: .6rem .75rem; margin: .75rem 0; }
+  .probe { position: absolute; width: 1px; height: 1px; opacity: 0; }
+</style>
+</head>
+<body>
+<h1>Test sign-in page</h1>
+<p>This page stands in for a site's sign-in page in Bread's sheet. Each button ends the flow at Bread's callback address, <code>com.miden.wallet.auth://callback</code>.</p>
+<div class="note" id="second-origin-note" hidden>
+  <p>You came here through the second-origin page on <code>raw.githack.com</code>. These buttons name this page's origin or none, never <code>raw.githack.com</code>, so whichever you press, the second-origin page should get <code>AUTH_ORIGIN_MISMATCH</code> and never <code>{ url }</code>. Press Finish.</p>
+</div>
+<div class="note" id="slow-note" hidden>
+  <p>Slow page: it keeps loading for about 25 seconds. Close the sheet while it is still loading. Expected: <code>{ cancelled: true }</code>.</p>
+  <p id="loading"></p>
+</div>
+<p>Test handle: <code id="handle"></code>. It's a dummy value made for this page; after the check, search the device logs for it.</p>
+
+<div class="end" data-end="finish">
+  <button type="button">Finish</button>
+  <p class="hint">Names this page's origin once. Expected: <code>{ url }</code> showing <code>origin</code> and <code>login</code>.</p>
+  <code class="url"></code>
+</div>
+<div class="end" data-end="other">
+  <button type="button">Finish naming another origin</button>
+  <p class="hint">Names <code>https://example.com</code>. Expected: <code>AUTH_ORIGIN_MISMATCH</code>, and the page never gets the URL.</p>
+  <code class="url"></code>
+</div>
+<div class="end" data-end="none">
+  <button type="button">Finish with no origin</button>
+  <p class="hint">Has no <code>origin</code> parameter. Expected: <code>AUTH_ORIGIN_MISMATCH</code>.</p>
+  <code class="url"></code>
+</div>
+<div class="end" data-end="twice">
+  <button type="button">Finish with two origin parameters</button>
+  <p class="hint">Names this page's origin twice. Expected: <code>AUTH_ORIGIN_MISMATCH</code>.</p>
+  <code class="url"></code>
+</div>
+<div class="end" data-end="error">
+  <button type="button">Finish with login_error=cancelled</button>
+  <p class="hint">Names this page's origin and reports the site's own error code in place of a handle. Expected: <code>{ url }</code> showing <code>login_error = cancelled</code>.</p>
+  <code class="url"></code>
+</div>
+<p class="note" id="sent" hidden></p>
+<div id="probes"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  const params = new URLSearchParams(location.search);
+  const fromSecondOrigin = params.get('from') === 'second-origin';
+  const random = Array.from(crypto.getRandomValues(new Uint8Array(6)), byte => byte.toString(16).padStart(2, '0')).join('');
+  const handle = `test-${random}`;
+  const callback = 'com.miden.wallet.auth://callback';
+  const origin = encodeURIComponent(location.origin);
+  const ends = {
+    finish: `${callback}?origin=${origin}&login=${handle}`,
+    other: `${callback}?origin=${encodeURIComponent('https://example.com')}&login=${handle}`,
+    none: `${callback}?login=${handle}`,
+    twice: `${callback}?origin=${origin}&origin=${origin}&login=${handle}`,
+    error: `${callback}?origin=${origin}&login_error=cancelled`,
+  };
+
+  document.getElementById('handle').textContent = handle;
+  if (fromSecondOrigin) document.getElementById('second-origin-note').hidden = false;
+
+  for (const box of document.querySelectorAll('[data-end]')) {
+    const url = ends[box.dataset.end];
+    box.querySelector('.url').textContent = url;
+    if (fromSecondOrigin) box.querySelector('.hint').textContent = 'From the second-origin page, expected: AUTH_ORIGIN_MISMATCH, never { url }.';
+    box.querySelector('button').addEventListener('click', () => {
+      const sent = document.getElementById('sent');
+      sent.textContent = `Going to ${url}. Bread's sheet should close now.`;
+      sent.hidden = false;
+      location.href = url;
+    });
+  }
+
+  if (params.get('slow') === '1') {
+    document.getElementById('slow-note').hidden = false;
+    for (const src of [
+      `https://httpbin.org/drip?delay=25&duration=0&numbytes=1&code=200&nocache=${random}`,
+      `https://httpbingo.org/delay/10?nocache=${random}`,
+    ]) {
+      const probe = document.createElement('img');
+      probe.className = 'probe';
+      probe.alt = '';
+      probe.src = src;
+      document.getElementById('probes').append(probe);
+    }
+    const loading = document.getElementById('loading');
+    const start = performance.now();
+    const elapsed = () => Math.round((performance.now() - start) / 1000);
+    const show = () => {
+      loading.textContent = `Still loading: ${elapsed()} s`;
+    };
+    show();
+    const timer = setInterval(show, 500);
+    window.addEventListener('load', () => {
+      clearInterval(timer);
+      const took = elapsed();
+      loading.textContent = took >= 20
+        ? `Finished loading after ${took} s.`
+        : `Finished loading after ${took} s, sooner than planned because a delay service answered early. Close the sheet sooner, or open the slow page again.`;
+    });
+  }
+})();
+</script>
+</body>
+</html>
