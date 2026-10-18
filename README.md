@@ -27,6 +27,7 @@ Google and Apple sign-in are checked separately.
 - [ ] A tab closed while its page is still loading: **Slow page**, then close the tab while it shows "Still loading". Expected: `{"cancelled":true}`.
 - [ ] No Custom Tabs browser: disable every browser app, then **Sign in**. Expected: `AUTH_UNAVAILABLE` at once and no tab. With a browser enabled again, **Sign in** opens a tab.
 - [ ] Chrome's picture-in-picture: **Sign in**, minimize the tab, restore it, then **Finish**. Note which came back: `{ url }`, or `{"cancelled":true}` already when the tab was minimized.
+- [ ] Bread covered but not stopped: **Sign in after a delay**, then before it fires bring up something that covers Bread without leaving it, such as the assistant (long-press home) or a permission dialog. Note whether a tab opens over it. The guide says Bread must be in the foreground; Android opens the tab anyway today, which [0xMiden/wallet#1577](https://github.com/0xMiden/wallet/issues/1577) tracks.
 - [ ] The first Custom Tab after installing the browser: reinstall the browser or clear its data, **Sign in**, go through its first-run screens, then **Finish**. Expected: `{ url }`, not an early `{"cancelled":true}`.
 - [ ] A default browser other than Chrome: make another browser with Custom Tabs the default, **Sign in**, then **Finish**. Expected: `{ url }`.
 - [ ] After each Android check the page has an answer, and the next **Sign in** opens a tab, never `AUTH_BUSY`.
